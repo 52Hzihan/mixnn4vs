@@ -213,26 +213,32 @@ def GP_augment(light_curves, flatten_train_data, size):
             if count == size-num_samples:
                 break
         print('batch=%d, count=%d'%(batch,count))
-    from math import ceil
-    # print('error_count=%d/batch)'%ceil((error_count/batch)))
     return
 
-def save_dataset_multi_input(data, name):
+def save_dataset_multi_input(data, name, feature=True, image=True):
     X_sequence = []
-    X_feature = []
-    X_image = []
     Y = []
     flatten_data = flat_data(data)
     random.shuffle(flatten_data)
     for lc in flatten_data:
         X_sequence.append(np.column_stack((np.array(lc.data['phase']), 
                                 np.array(lc.data[lc.measurement ]), 
-                                np.array(lc.data[lc.error]))))
-        X_feature.append([lc.period, lc.amplitude])
-        X_image.append(np.array(lc.to_image()))                        
+                                np.array(lc.data[lc.error]))))                                
         Y.append(int(lc.class_label))
+    data=[X_sequence]
+    if feature == True:
+        X_feature = []
+        for lc in flatten_data:
+            X_feature.append([lc.period, lc.amplitude])
+        data.append(X_feature)
+    if image == True:
+        X_image = []
+        for lc in flatten_data:
+            X_image.append(np.array(lc.to_image()))
+        data.append(X_image)
+    data.append(Y)
     f = open(name, 'wb')
-    pickle.dump((X_sequence, X_feature, X_image, Y), f)
+    pickle.dump(data, f)
     f.close()
     return
 
@@ -250,23 +256,27 @@ def max_class_number(data):
         class_numbers.append(len(class_type))
     return np.max(np.array(class_numbers))
 
-def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False, down_sample_size=None, instance=1):
+def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False, 
+            down_sample_size=None, instance=1, use_pre_load=False, pre_loaded=None):
     '''
     original_dataset : [classes : samples]
     down_sample_size must be greater than class_size
     '''
-    f1 = open(original_dataset, 'rb')
-    train_data, val_data, test_data = pickle.load(f1)
-    f1.close()
+    if use_pre_load == True:
+        train_data, val_data, test_data = pre_loaded
+    else:
+        f1 = open(original_dataset, 'rb')
+        train_data, val_data, test_data = pickle.load(f1)
+        f1.close()
     flatten_train_data = flat_data(train_data)
     split_file_name = re.match(r'(data/original_dataset)(.*)', original_dataset)
     suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
-    os.mkdir('data/split'+suffix+'_instance%d'%instance)
+    # os.mkdir('data/split'+suffix+'_instance%d'%instance)
 
-    if aug_val == True:
-        max_val_class_number = max_class_number(val_data)
-        for class_type in val_data:
-            GP_augment(class_type, flatten_train_data, max_val_class_number)
+    # if aug_val == True:
+    #     max_val_class_number = max_class_number(val_data)
+    #     for class_type in val_data:
+    #         GP_augment(class_type, flatten_train_data, max_val_class_number)
     for class_type in train_data:
         if len(class_type) < class_size:
             GP_augment(class_type, flatten_train_data, class_size)   
@@ -277,19 +287,92 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
             if len(class_type) > down_sample_size:
                 train_data[i] = random.sample(class_type, down_sample_size)
 
-    
-    save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance%d/train_data'%instance)
-    save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance%d/val_data'%instance)
-    save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance%d/test_data'%instance)
-    train_weight = compute_weight(train_data)
-    test_weight = compute_weight(test_data)
-    f2 = open('data/split'+suffix+'_instance%d/class_weights'%instance, 'wb')
-    pickle.dump((train_weight, test_weight), f2)
-    f2.close()
-    f3 = open('data/split'+suffix+'_instance%d/total_dataset'%instance, 'wb')
-    pickle.dump((train_data, val_data, test_data), f3)
-    f3.close()
+    save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance0-9/train_data%d'%instance)
+
+
+    # save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance%d/train_data'%instance)
+    # save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance%d/val_data'%instance)
+    # save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance%d/test_data'%instance)
+    # train_weight = compute_weight(train_data)
+    # test_weight = compute_weight(test_data)
+    # f2 = open('data/split'+suffix+'_instance%d/class_weights'%instance, 'wb')
+    # pickle.dump((train_weight, test_weight), f2)
+    # f2.close()
+    # f3 = open('data/split'+suffix+'_instance%d/total_dataset'%instance, 'wb')
+    # pickle.dump((train_data, val_data, test_data), f3)
+    # f3.close()
     return
 
-
+def GP_augment_exclude_origin(light_curves, flatten_train_data, size):
+    '''
+    ---
+    flatten_train_data : 用于随机抽取观测cadence，以生成模拟观测
+    '''
+    count = 0
+    batch = 0
+    initial_data = light_curves.copy()
+    augmented_data = []
+    error_count = 0
+    while count < size:
+        batch += 1
+        print('augmenting')
+        for lc in initial_data:
+            x = get_sample_cadence(flatten_train_data, lc.period)
+            try:
+                simu_lc = lc.generate_GP_simulation(x, phase_shift_ratio=random.uniform(0,1), 
+                                                    scale_std=False)
+            except:
+                error_count += 1
+                continue
+            simu_lc.class_label = lc.class_label
+            simu_lc.id = lc.id + 'generate%d'%batch
+            augmented_data.append(lc)
+            count += 1
+            if count == size:
+                break
+        print('batch=%d, count=%d'%(batch,count))
+    return augmented_data
     
+def create_dataset_exclude_origin_multi_test(original_dataset, class_size, aug_val=True, 
+                    down_sample=False, down_sample_size=None, instance=1, multi_test=5):
+    f1 = open(original_dataset, 'rb')
+    train_data, val_data, test_data = pickle.load(f1)
+    f1.close()
+    flatten_train_data = flat_data(train_data)
+    split_file_name = re.match(r'(data/original_dataset)(.*)', original_dataset)
+    suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
+    os.mkdir('data/split'+suffix+'_exclude_origin_multi_test_instance%d'%instance)
+
+    if down_sample == True:
+        if down_sample_size == None:
+            down_sample_size = class_size
+        for i, class_type in enumerate(train_data):
+            if len(class_type) > down_sample_size:
+                train_data[i] = random.sample(class_type, down_sample_size)
+
+    if aug_val == True:
+        aug_val_data = []
+        max_val_class_number = 1000
+        for class_type in val_data:
+            aug_val_data.append(GP_augment_exclude_origin(class_type, flatten_train_data, max_val_class_number))
+        save_dataset_multi_input(aug_val_data, 'data/split'+suffix+'_exclude_origin_multi_test_instance%d/val_data'%instance)
+        print('aug_val finished')
+    
+    aug_train_data=[]
+    for class_type in train_data:
+        aug_train_data.append(GP_augment_exclude_origin(class_type, flatten_train_data, class_size))  
+    save_dataset_multi_input(aug_train_data, 'data/split'+suffix+'_exclude_origin_multi_test_instance%d/train_data'%instance)
+    print('aug_train_finished')
+
+    multi_test_data=[]
+    max_test_class_number = 1000
+    for i in range(0, multi_test):
+        single_test_data = []
+        for class_type in test_data:
+            single_test_data.append(GP_augment_exclude_origin(class_type, flatten_train_data, max_test_class_number))
+        multi_test_data.append(single_test_data)
+        
+    for i in range(0, multi_test):
+        save_dataset_multi_input(multi_test_data[i], 'data/split'+suffix+'_exclude_origin_multi_test_instance%d/test_data%d'%(instance,i))
+    print('aug_test_finished')
+    return
