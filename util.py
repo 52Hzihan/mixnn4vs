@@ -241,11 +241,11 @@ def save_dataset_multi_input(data, name, feature=True, image=True):
         Y.append(int(lc.class_label))
     data=[X_sequence]
     if feature == True:
-        feature_df = get_extra_features()
+        # feature_df = get_extra_features()
         X_feature = []
         for lc in flatten_data:
-            # X_feature.append([lc.period, lc.amplitude])
-            X_feature.append(list(feature_df.loc[int(lc.id), ['0', '1', '2', '3', '4', '5']]))
+            X_feature.append([lc.period, lc.amplitude])
+            # X_feature.append(list(feature_df.loc[int(lc.id), ['0', '1', '2', '3', '4', '5']]))
         data.append(X_feature)
     if image == True:
         X_image = []
@@ -288,12 +288,12 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
     split_file_name = re.match(r'(data/original_dataset)(.*)', original_dataset)
     suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
     
-    os.mkdir('data/more_features_split'+suffix+'_instance0-9')
+    os.mkdir('data/split'+suffix+'_instance0-9')
     if aug_val == True:
         max_val_class_number = max_class_number(val_data)
         for class_type in val_data:
             GP_augment(class_type, flatten_train_data, max_val_class_number)
-    save_dataset_multi_input(val_data, 'data/more_features_split'+suffix+'_instance0-9/val_data')
+    # save_dataset_multi_input(val_data, 'data/more_features_split'+suffix+'_instance0-9/val_data')
     for class_type in train_data:
         if len(class_type) < class_size:
             GP_augment(class_type, flatten_train_data, class_size)   
@@ -304,13 +304,13 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
             if len(class_type) > down_sample_size:
                 train_data[i] = random.sample(class_type, down_sample_size)
 
-    save_dataset_multi_input(train_data, 'data/more_features_split'+suffix+'_instance0-9/train_data%d'%instance)
+    save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance0-9/train_data%d'%instance, image=False)
 
 
     # save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance%d/train_data'%instance)
     # save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance%d/val_data'%instance)
-    # save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance%d/test_data'%instance)
-    save_dataset_multi_input(test_data, 'data/more_features_split'+suffix+'_instance0-9/test_data')
+    save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance%d/test_data'%instance, image=False)
+    # save_dataset_multi_input(test_data, 'data/more_features_split'+suffix+'_instance0-9/test_data')
     # train_weight = compute_weight(train_data)
     # test_weight = compute_weight(test_data)
     # f2 = open('data/split'+suffix+'_instance%d/class_weights'%instance, 'wb')
