@@ -1,4 +1,6 @@
+from genericpath import exists
 import glob
+from importlib.resources import path
 import pandas as pd
 import numpy as np
 from LightCurve import CRTS_VS_LightCurve
@@ -89,13 +91,20 @@ def preprocess(X, m_max=np.Inf):
 
     return X
 
-def generate_batch(X, Y, batch_size):
+
+def generate_batch(X_sequence=None, X_image=None, X_feature=None, Y=None, batch_size=32):
     idx = 0
     batch_num = len(Y)/batch_size
+    batch_x_sequence = batch_x_image = batch_x_feature = None
     while idx < batch_num:
-        batch_x = X[idx * batch_size : (idx + 1) * batch_size]
+        if X_sequence != None:
+            batch_x_sequence = X_sequence[idx * batch_size : (idx + 1) * batch_size]
+        if X_image != None:
+            batch_x_image = X_image[idx * batch_size : (idx + 1) * batch_size]
+        if X_feature != None:
+            batch_x_feature = X_feature[idx * batch_size : (idx + 1) * batch_size]
         batch_y = Y[idx * batch_size : (idx + 1) * batch_size]
-        yield batch_x, batch_y
+        yield batch_x_sequence, batch_x_image, batch_x_feature, batch_y
         idx += 1
 
 def get_meta_information(file_path):
@@ -105,10 +114,14 @@ def get_meta_information(file_path):
     return info
 
 def dataset_split(test_ratio, val_ratio, seed=0):
+    ''' 
+    legacy
+    没考虑到交叉验证需要，应该先load（预处理）再划分
+    '''
     class_folders = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    tatol_train_names = []
-    tatol_val_names = []
-    tatol_test_names = []
+    total_train_names = []
+    total_val_names = []
+    total_test_names = []
     for i, folder in enumerate(class_folders):
         random.seed(seed+i)
         name_list = glob.glob('data/original_data/type/%s/*.dat'%folder)
@@ -119,13 +132,17 @@ def dataset_split(test_ratio, val_ratio, seed=0):
         random.seed(seed+i+2341)
         val_names = random.sample(val_and_train_names, num_val)
         train_names = list(set(val_and_train_names) - set(val_names))
-        tatol_train_names.append(train_names)
-        tatol_val_names.append(val_names)
-        tatol_test_names.append(test_names)
+        total_train_names.append(train_names)
+        total_val_names.append(val_names)
+        total_test_names.append(test_names)
     print('dataset split finished')
-    return tatol_train_names, tatol_val_names, tatol_test_names
+    return total_train_names, total_val_names, total_test_names
 
-def load_data(file_name_list):
+def load_data(file_name_list, GP_model=False):
+    '''
+    读取单个类的数据
+    将原始数据读取为LightCurve对象，并进行预处理
+    '''
     info_file = 'data/SSS_Per_Tab.txt'
     info = get_meta_information(info_file)
     lc_list = []
@@ -138,14 +155,52 @@ def load_data(file_name_list):
         period = info.loc[int(lc.id), 'Period']
         lc.fold(period, normalize_phase=False)
         lc.clean()
+        if GP_model == True:
+            try:
+                lc.fit_GP_model()
+            except:
+                print('there is an error when fit GP_model, class_label=%s, id=%s'%(lc.class_label,lc.id))
+                lc.show()
         lc_list.append(lc)
     print('load %d files'%len(file_name_list))
     return lc_list
 
+def load_original_data_without_split(GP_limit=5000):
+    '''
+    读取所有数据并进行预处理，并保存为对象
+    GP_limit : 预处理时是否拟合GP模型的类中样本数量上限
+    '''
+    class_folders = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    dataset = []
+    for i, folder in enumerate(class_folders):
+        name_list = glob.glob('data/original_data/type/%s/*.dat'%folder)
+        lc_list = load_data(name_list, GP_model = True if len(name_list) <= GP_limit else False)
+        dataset.append(lc_list)
+    f = open('data/original_dataset','wb')
+    pickle.dump(dataset, f)
+    f.close
+    return
+
+def dataset_split_after_load():
+    '''
+    保存划分好的未增强数据集，划分中分类保存
+    有需要再写吧，先用legacy的，十倍时间就十倍时间吧
+    '''
+    f = open('data/original_dataset','wb')    
+    original_dataset = pickle.load(f)
+    f.close()
+    pass
+
+def dataset_split_K_fold_after_load(K=10):
+    '''
+    保存划分好的未增强数据集，划分中分类保存
+    '''
+    pass
 
 def load_original_data(test_ratio, val_ratio, seed=0):
     '''
-    original_dataset : [train/val/test : classes : samples]
+    legacy
+    没考虑到交叉验证需要，应该先load（预处理）再划分
     '''
     train_names, val_names, test_names = dataset_split(test_ratio, val_ratio, seed)
     print('class labels are [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]')
@@ -162,16 +217,16 @@ def load_original_data(test_ratio, val_ratio, seed=0):
     return original_dataset
 
 
-def get_sample_cadence(flatten_train_data, period):
+def get_sample_cadence(flatten_data, period):
     '''
     randomly select a observation cadence from light curves in trainning dataset,
     for generate simulated light curve
 
-    flatten_train_data: [samples] <- [classes : samples] 
+    flatten_data: [samples] <- [classes : samples] 
     '''
-    idx = random.randint(0, len(flatten_train_data)-1)
-    time_fmt = flatten_train_data[idx].time_fmt
-    time_cadence =  np.array(flatten_train_data[idx].data[time_fmt])
+    idx = random.randint(0, len(flatten_data)-1)
+    time_fmt = flatten_data[idx].time_fmt
+    time_cadence =  np.array(flatten_data[idx].data[time_fmt])
     time_cadence.sort()
     phase =(time_cadence - time_cadence[0]) % period
     return phase
@@ -186,10 +241,10 @@ def flat_data(data):
             flatten_data.append(sample)
     return flatten_data
 
-def GP_augment(light_curves, flatten_train_data, size):
+def GP_augment(light_curves, flatten_data, size):
     '''
     ---
-    flatten_train_data : 用于随机抽取观测cadence，以生成模拟观测
+    flatten_data : 用于随机抽取观测cadence，以生成模拟观测
     '''
     count = 0
     batch = 0
@@ -200,10 +255,12 @@ def GP_augment(light_curves, flatten_train_data, size):
         batch += 1
         print('augmenting')
         for lc in initial_data:
-            x = get_sample_cadence(flatten_train_data, lc.period)
+            x = get_sample_cadence(flatten_data, lc.period)
             try:
                 simu_lc = lc.generate_GP_simulation(x, phase_shift_ratio=random.uniform(0,1))
             except:
+                print('there is an error when fit GP_model, class_label=%s, id=%s'%(lc.class_label,lc.id))
+                lc.show()
                 error_count += 1
                 continue
             simu_lc.class_label = lc.class_label
@@ -217,6 +274,9 @@ def GP_augment(light_curves, flatten_train_data, size):
 
 
 def get_extra_features():
+    '''
+    feature的预处理还是留着后面吧
+    '''
     namelist = glob.glob('data/features/*/*')
     frames = []
     for name in namelist:
@@ -229,7 +289,7 @@ def get_extra_features():
     #     result[column] = (result[column]-mean)/std
     return result 
 
-def save_dataset_multi_input(data, name, feature=True, image=True):
+def save_dataset_multi_input(data, name, feature=True, image=True, feature_type='physical'):
     X_sequence = []
     Y = []
     flatten_data = flat_data(data)
@@ -241,11 +301,14 @@ def save_dataset_multi_input(data, name, feature=True, image=True):
         Y.append(int(lc.class_label))
     data=[X_sequence]
     if feature == True:
-        # feature_df = get_extra_features()
+        if feature_type != 'physical':
+            feature_df = get_extra_features()
         X_feature = []
         for lc in flatten_data:
-            X_feature.append([lc.period, lc.amplitude])
-            # X_feature.append(list(feature_df.loc[int(lc.id), ['0', '1', '2', '3', '4', '5']]))
+            if feature_type == 'physical':
+                X_feature.append([lc.period, lc.amplitude])
+            else:
+                X_feature.append(list(feature_df.loc[int(lc.id), ['0', '1', '2', '3', '4', '5']]))
         data.append(X_feature)
     if image == True:
         X_image = []
@@ -273,27 +336,28 @@ def max_class_number(data):
     return np.max(np.array(class_numbers))
 
 def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False, 
-            down_sample_size=None, instance=1, use_pre_load=False, pre_loaded=None):
+            down_sample_size=None, instance=1, save_weight=False):
     '''
     original_dataset : [classes : samples]
     down_sample_size must be greater than class_size
     '''
-    if use_pre_load == True:
-        train_data, val_data, test_data = pre_loaded
-    else:
-        f1 = open(original_dataset, 'rb')
-        train_data, val_data, test_data = pickle.load(f1)
-        f1.close()
+    f1 = open(original_dataset, 'rb')
+    train_data, val_data, test_data = pickle.load(f1)
+    f1.close()
     flatten_train_data = flat_data(train_data)
     split_file_name = re.match(r'(data/original_dataset)(.*)', original_dataset)
     suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
     
-    os.mkdir('data/split'+suffix+'_instance0-9')
-    if aug_val == True:
-        max_val_class_number = max_class_number(val_data)
-        for class_type in val_data:
-            GP_augment(class_type, flatten_train_data, max_val_class_number)
-    # save_dataset_multi_input(val_data, 'data/more_features_split'+suffix+'_instance0-9/val_data')
+    if not(os.path.exists('data/split'+suffix+'_instance0-9')): 
+        os.mkdir('data/split'+suffix+'_instance0-9')
+    if not(os.path.exists('data/split'+suffix+'_instance0-9/val_data')):
+        if aug_val == True:
+            max_val_class_number = max_class_number(val_data) 
+            #这里方便起见没有设置可选的验证集增强数目，如果要加上，必须另外增加验证集下采样，以保证均衡
+            for class_type in val_data:
+                if len(class_type) < max_val_class_number:
+                    GP_augment(class_type, flatten_train_data, max_val_class_number)
+        save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance0-9/val_data', image=False)
     for class_type in train_data:
         if len(class_type) < class_size:
             GP_augment(class_type, flatten_train_data, class_size)   
@@ -303,19 +367,24 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
         for i, class_type in enumerate(train_data):
             if len(class_type) > down_sample_size:
                 train_data[i] = random.sample(class_type, down_sample_size)
-
     save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance0-9/train_data%d'%instance, image=False)
 
+    if not(os.path.exists('data/split'+suffix+'_instance0-9/test_data')):
+        save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance0-9/test_data', image=False)
 
-    # save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance%d/train_data'%instance)
-    # save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance%d/val_data'%instance)
-    save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance%d/test_data'%instance, image=False)
-    # save_dataset_multi_input(test_data, 'data/more_features_split'+suffix+'_instance0-9/test_data')
-    # train_weight = compute_weight(train_data)
-    # test_weight = compute_weight(test_data)
-    # f2 = open('data/split'+suffix+'_instance%d/class_weights'%instance, 'wb')
-    # pickle.dump((train_weight, test_weight), f2)
-    # f2.close()
+    # if not(os.path.exists('data/split'+suffix+'_instance0-9/aug_test_data')):
+    #     max_test_class_number = max_class_number(test_data) 
+    #     for class_type in test_data:
+    #         if len(class_type) < max_test_class_number:
+    #             GP_augment(class_type, flatten_train_data, max_test_class_number)
+    #     save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance0-9/aug_test_data', image=False)
+
+    if save_weight==True:
+        train_weight = compute_weight(train_data)
+        test_weight = compute_weight(test_data)
+        f2 = open('data/split'+suffix+'_instance0-9/class_weights%d'%instance, 'wb')
+        pickle.dump((train_weight, test_weight), f2)
+        f2.close()
     # f3 = open('data/split'+suffix+'_instance%d/total_dataset'%instance, 'wb')
     # pickle.dump((train_data, val_data, test_data), f3)
     # f3.close()
