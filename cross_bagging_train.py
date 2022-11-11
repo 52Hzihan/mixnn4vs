@@ -1,3 +1,6 @@
+import os
+os.environ['CUDA_VISIBLE_DEVICES']='0'
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -73,7 +76,7 @@ if __name__ == '__main__':
     # boundaries, values, name=None
     # )
 
-    for fold in range(1,10):
+    for fold in range(5,10):
         total_X_sequence_train, total_X_feature_train, total_Y_train , \
         X_sequence_val_trimed, X_feature_val, Y_val = read_data(fold=fold)
         X_val = {'sequence':X_sequence_val_trimed, 'feature':X_feature_val}

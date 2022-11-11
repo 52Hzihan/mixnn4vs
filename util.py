@@ -58,7 +58,8 @@ def cm_plot(conf_mat, classes_types, classifier_model,  nClasses,cmap=plt.cm.Red
     fig = plot_confusion_matrix(conf_mat, classes_types, normalize=True, title='Confusion matrix for ' + str(classifier_model) )
     # plt.savefig(plot_title +'_CM.pdf',bbox_inches = 'tight',pad_inches = 0.1)
     fig.show()
-
+    return fig
+    
 def times_to_lags(T):
     """(N x n_step) matrix of times -> (N x n_step) matrix of lags.
     First time is assumed to be zero.
@@ -92,17 +93,14 @@ def preprocess(X, m_max=np.Inf):
     return X
 
 
-def generate_batch(X_sequence=None, X_image=None, X_feature=None, Y=None, batch_size=32):
+def generate_batch(X_sequence=[], X_image=[], X_feature=[], Y=[], batch_size=32):
     idx = 0
     batch_num = len(Y)/batch_size
     batch_x_sequence = batch_x_image = batch_x_feature = None
     while idx < batch_num:
-        if X_sequence != None:
-            batch_x_sequence = X_sequence[idx * batch_size : (idx + 1) * batch_size]
-        if X_image != None:
-            batch_x_image = X_image[idx * batch_size : (idx + 1) * batch_size]
-        if X_feature != None:
-            batch_x_feature = X_feature[idx * batch_size : (idx + 1) * batch_size]
+        batch_x_sequence = X_sequence[idx * batch_size : (idx + 1) * batch_size]
+        batch_x_image = X_image[idx * batch_size : (idx + 1) * batch_size]
+        batch_x_feature = X_feature[idx * batch_size : (idx + 1) * batch_size]
         batch_y = Y[idx * batch_size : (idx + 1) * batch_size]
         yield batch_x_sequence, batch_x_image, batch_x_feature, batch_y
         idx += 1
@@ -256,10 +254,12 @@ def GP_augment(light_curves, flatten_data, size):
         print('augmenting')
         for lc in initial_data:
             x = get_sample_cadence(flatten_data, lc.period)
+            # x = np.random.uniform(low=0,high=lc.period, size=len(lc))
+            # x = np.sort(x)
             try:
                 simu_lc = lc.generate_GP_simulation(x, phase_shift_ratio=random.uniform(0,1))
             except:
-                print('there is an error when fit GP_model, class_label=%s, id=%s'%(lc.class_label,lc.id))
+                print('there is an error when generate_GP_simulation, class_label=%s, id=%s'%(lc.class_label,lc.id))
                 lc.show()
                 error_count += 1
                 continue
@@ -336,7 +336,7 @@ def max_class_number(data):
     return np.max(np.array(class_numbers))
 
 def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False, 
-            down_sample_size=None, instance=1, save_weight=False):
+            down_sample_size=None, instance=0, save_weight=False, image=False):
     '''
     original_dataset : [classes : samples]
     down_sample_size must be greater than class_size
@@ -346,7 +346,8 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
     f1.close()
     flatten_train_data = flat_data(train_data)
     split_file_name = re.match(r'(data/original_dataset)(.*)', original_dataset)
-    suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
+    # suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
+    suffix = '_image' + split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
     
     if not(os.path.exists('data/split'+suffix+'_instance0-9')): 
         os.mkdir('data/split'+suffix+'_instance0-9')
@@ -357,7 +358,7 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
             for class_type in val_data:
                 if len(class_type) < max_val_class_number:
                     GP_augment(class_type, flatten_train_data, max_val_class_number)
-        save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance0-9/val_data', image=False)
+        save_dataset_multi_input(val_data, 'data/split'+suffix+'_instance0-9/val_data', image=image)
     for class_type in train_data:
         if len(class_type) < class_size:
             GP_augment(class_type, flatten_train_data, class_size)   
@@ -367,10 +368,10 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
         for i, class_type in enumerate(train_data):
             if len(class_type) > down_sample_size:
                 train_data[i] = random.sample(class_type, down_sample_size)
-    save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance0-9/train_data%d'%instance, image=False)
+    save_dataset_multi_input(train_data, 'data/split'+suffix+'_instance0-9/train_data%d'%instance, image=image)
 
     if not(os.path.exists('data/split'+suffix+'_instance0-9/test_data')):
-        save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance0-9/test_data', image=False)
+        save_dataset_multi_input(test_data, 'data/split'+suffix+'_instance0-9/test_data', image=image)
 
     # if not(os.path.exists('data/split'+suffix+'_instance0-9/aug_test_data')):
     #     max_test_class_number = max_class_number(test_data) 
