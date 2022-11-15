@@ -34,6 +34,7 @@ class LightCurve():
         self.time_fmt = time_fmt
         self.measurement = measurement
         self.error = error
+        self.phase_shift_ratio = 0
         self.GP_model = None        
 
     def copy(self):
@@ -139,8 +140,8 @@ class LightCurve():
         self.measurement = 'smoothed_'+self.measurement
         self.show()
         self.measurement = self.measurement[9:]
-
-    def fit_GP_model(self, kernel=None):
+   
+    def fit_GP_model_one_attempt(self, kernel=None):
         if self.folded==False:
             raise SequenceError('GP model only for phase folded curve')
         if self.GP_model != None:
@@ -163,13 +164,32 @@ class LightCurve():
         def grad_neg_ln_like(p):
             gp.set_parameter_vector(p)
             return -gp.grad_log_likelihood(y)
-
+    
         result = minimize(neg_ln_like, gp.get_parameter_vector(), jac=grad_neg_ln_like, method="L-BFGS-B")
         # print(result)
         gp.set_parameter_vector(result.x)
         # print("\nFinal ln-likelihood: {0:.2f}".format(gp.log_likelihood(y)))
         self.GP_model = gp
         return gp
+
+    def fit_GP_model(self, kernel=None):
+        '''
+        try to fix error when fit GP model
+        don't know why but it works
+        '''
+        import random
+        success = False
+        count_limit = 500
+        count = 0
+        while not success:
+            try:
+                self.fit_GP_model_one_attempt(kernel=kernel)
+                success = True
+            except:
+                self.data = self.data.drop(random.sample(list(self.data.index),1))
+                count += 1
+                if count >= count_limit:
+                    raise SequenceError('GP_fitting failed')
 
     def compute_time_delta(self):
         '''
@@ -192,6 +212,8 @@ class LightCurve():
         simu_lc.time_span = self.time_span
         simu_lc.phase_span = self.phase_span
         simu_lc.period = self.period
+        simu_lc.GP_model = self.GP_model
+        simu_lc.phase_shift_ratio = phase_shift_ratio
 
         original_y = np.array(self.data[self.measurement])
         pred, pred_var = self.GP_model.predict(original_y, x, return_var=True)
@@ -236,6 +258,11 @@ class LightCurve():
         image = image.convert('L')
         plt.close('all')
         return image
+    
+    def to_uncertainty_map(self, figsize=128):
+        if self.GP_model == None:
+            self.fit_GP_model()
+        x = np.linspace(0, self.phase_span, 128)
 
 class CRTS_VS_LightCurve(LightCurve):
 
