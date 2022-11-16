@@ -179,7 +179,7 @@ class LightCurve():
         '''
         import random
         success = False
-        count_limit = 500
+        count_limit = 200
         count = 0
         while not success:
             try:
@@ -212,8 +212,8 @@ class LightCurve():
         simu_lc.time_span = self.time_span
         simu_lc.phase_span = self.phase_span
         simu_lc.period = self.period
-        simu_lc.GP_model = self.GP_model
-        simu_lc.phase_shift_ratio = phase_shift_ratio
+        # simu_lc.GP_model = self.GP_model
+        # simu_lc.phase_shift_ratio = phase_shift_ratio
 
         original_y = np.array(self.data[self.measurement])
         pred, pred_var = self.GP_model.predict(original_y, x, return_var=True)
@@ -259,10 +259,72 @@ class LightCurve():
         plt.close('all')
         return image
     
-    def to_uncertainty_map(self, figsize=128):
+    def to_uncertainty_map(self, figsize=128, scale_std=True):
         if self.GP_model == None:
             self.fit_GP_model()
         x = np.linspace(0, self.phase_span, 128)
+        original_y = np.array(self.data[self.measurement])
+        pred, pred_var = self.GP_model.predict(original_y, x, return_var=True)
+        pred_std = np.sqrt(pred_var)
+
+        if scale_std == True:
+            mean_error =  np.mean(self.data[self.error])
+            mean_pred_std = np.mean(pred_std)
+            scaled_std = pred_std * mean_error / mean_pred_std
+            simu_std = scaled_std
+        else:
+            simu_std = pred_std
+                
+        phase = x
+        time = phase.copy()
+        tmp_data = pd.DataFrame(np.column_stack((time, pred, simu_std, phase)), 
+                                columns=['mjd', 'mag', 'err', 'phase'])
+        
+        from PIL import Image
+        fig = plt.figure(figsize=(4,4),dpi=32)
+        fig.patch.set_facecolor('black')
+        x_label = 'phase' if self.folded else self.data.columns[0]
+        x = np.array(self.data[x_label])
+        y = np.array(self.data[self.measurement])
+        plt.scatter(x,y, s=2,c='b')
+        plt.scatter(tmp_data['phase'], tmp_data['mag'],s=10,c='r')
+        plt.axis('off')
+        plt.subplots_adjust(top=1, bottom=0, right=1, left=0)
+        plt.margins(0,0)
+        fig.canvas.draw()
+        w, h = fig.canvas.get_width_height()
+        buf = np.fromstring(fig.canvas.tostring_argb(), dtype=np.uint8)
+        buf.shape = (w, h, 4)
+        buf = np.roll(buf, 3, axis=2)
+        image = Image.frombytes("RGBA", (w, h), buf.tostring())
+        plt.close('all')
+
+        pred_line_image = np.array(image)[:,:,0]
+        line_coordinate = np.array(range(0,128))
+        column_centres = []
+        for column in range(0,128):
+            column_weight = pred_line_image[:,column]
+            centre = np.matmul(line_coordinate, column_weight) / np.sum(column_weight)
+            column_centres.append(centre)
+        column_centres = np.array(column_centres)
+
+        pred_max_mag = np.max(tmp_data['mag'])
+        pred_min_mag = np.min(tmp_data['mag'])
+        pred_max_pixel = np.argmax(tmp_data['mag'])
+        pred_min_pixel = np.argmin(tmp_data['mag'])
+
+        mag_pixel_ratio = (pred_max_mag - pred_min_mag) / abs(column_centres[pred_max_pixel] - column_centres[pred_min_pixel])
+        
+        from scipy import stats
+        uncertainty_map = np.zeros((128,128))
+        normlization_ratio = 255/stats.norm.pdf(0)
+        for column in range(0,128):
+            for line in range(0,128):
+                distance = (line - column_centres[column]) * mag_pixel_ratio
+                uncertainty_map[line][column] = stats.norm.pdf(distance/tmp_data['err'][column]) * normlization_ratio
+        return uncertainty_map
+
+
 
 class CRTS_VS_LightCurve(LightCurve):
 
