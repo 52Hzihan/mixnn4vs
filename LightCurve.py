@@ -34,7 +34,6 @@ class LightCurve():
         self.time_fmt = time_fmt
         self.measurement = measurement
         self.error = error
-        self.phase_shift_ratio = 0
         self.GP_model = None        
 
     def copy(self):
@@ -212,8 +211,6 @@ class LightCurve():
         simu_lc.time_span = self.time_span
         simu_lc.phase_span = self.phase_span
         simu_lc.period = self.period
-        # simu_lc.GP_model = self.GP_model
-        # simu_lc.phase_shift_ratio = phase_shift_ratio
 
         original_y = np.array(self.data[self.measurement])
         pred, pred_var = self.GP_model.predict(original_y, x, return_var=True)
@@ -321,11 +318,12 @@ class LightCurve():
         for column in range(0,128):
             for line in range(0,128):
                 distance = (line - column_centres[column]) * mag_pixel_ratio
+                #这里可能会报出除零警告，导致无效值，如果对学习结果有影响，应想办法剔除
                 uncertainty_map[line][column] = stats.norm.pdf(distance/tmp_data['err'][column]) * normlization_ratio
         return uncertainty_map
 
 
-
+    
 class CRTS_VS_LightCurve(LightCurve):
 
     def read_CRTS_dat(self, file_path, id):

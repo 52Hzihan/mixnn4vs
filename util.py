@@ -167,6 +167,7 @@ def load_original_data_without_split(GP_limit=5000):
     '''
     读取所有数据并进行预处理，并保存为对象
     GP_limit : 预处理时是否拟合GP模型的类中样本数量上限
+    和下面几个是一个整体，还未完成
     '''
     class_folders = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     dataset = []
@@ -183,6 +184,7 @@ def dataset_split_after_load():
     '''
     保存划分好的未增强数据集，划分中分类保存
     有需要再写吧，先用legacy的，十倍时间就十倍时间吧
+    增加了uncertainty map之后，这些节省的时间好像不重要了，先搁置吧
     '''
     f = open('data/original_dataset','wb')    
     original_dataset = pickle.load(f)
@@ -195,19 +197,20 @@ def dataset_split_K_fold_after_load(K=10):
     '''
     pass
 
-def load_original_data(test_ratio, val_ratio, seed=0):
+def load_original_data(test_ratio, val_ratio, seed=0, GP_model=False):
     '''
     legacy
     没考虑到交叉验证需要，应该先load（预处理）再划分
+    好吧其也不用改了，毕竟生成uncertainty map的时间也很多
     '''
     train_names, val_names, test_names = dataset_split(test_ratio, val_ratio, seed)
     print('class labels are [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]')
     print('loading train data')
-    train_data = [load_data(train_names[i]) for i in range(0,11)]
+    train_data = [load_data(train_names[i], GP_model=GP_model) for i in range(0,11)]
     print('loading val data')
-    val_data = [load_data(val_names[i]) for i in range(0,11)]
+    val_data = [load_data(val_names[i], GP_model=GP_model) for i in range(0,11)]
     print('loading test data')
-    test_data = [load_data(test_names[i]) for i in range(0,11)]
+    test_data = [load_data(test_names[i], GP_model=GP_model) for i in range(0,11)]
     original_dataset = (train_data, val_data, test_data)
     f = open('data/original_dataset_%.2f_%.2f_%.2f'%(1-test_ratio-val_ratio, test_ratio, val_ratio), 'wb')
     pickle.dump(original_dataset, f)
@@ -290,6 +293,7 @@ def get_extra_features():
     return result 
 
 def save_dataset_multi_input(data, name, feature=True, image=True, feature_type='physical'):
+    print('saving data')
     X_sequence = []
     Y = []
     flatten_data = flat_data(data)
@@ -310,11 +314,17 @@ def save_dataset_multi_input(data, name, feature=True, image=True, feature_type=
             else:
                 X_feature.append(list(feature_df.loc[int(lc.id), ['0', '1', '2', '3', '4', '5']]))
         data.append(X_feature)
+    image_count = 0
     if image == True:
         X_image = []
+        X_uncertainty_map = []
         for lc in flatten_data:
             X_image.append(np.array(lc.to_image()))
+            X_uncertainty_map.append(lc.to_uncertainty_map())
         data.append(X_image)
+        data.append(X_uncertainty_map)
+        image_count += 1
+        print('generated %d images'%image_count)
     data.append(Y)
     f = open(name, 'wb')
     pickle.dump(data, f)
@@ -335,7 +345,7 @@ def max_class_number(data):
         class_numbers.append(len(class_type))
     return np.max(np.array(class_numbers))
 
-def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False, 
+def create_dataset(original_dataset, class_size, prefix='',aug_val=True, down_sample=False, 
             down_sample_size=None, instance=0, save_weight=False, image=False):
     '''
     original_dataset : [classes : samples]
@@ -347,7 +357,7 @@ def create_dataset(original_dataset, class_size, aug_val=True, down_sample=False
     flatten_train_data = flat_data(train_data)
     split_file_name = re.match(r'(data/original_dataset)(.*)', original_dataset)
     # suffix = split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
-    suffix = '_image' + split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
+    suffix = prefix + split_file_name.group(2) + '_aug_to_%d'%class_size + '_down_sample_%s'%str(down_sample)
     
     if not(os.path.exists('data/split'+suffix+'_instance0-9')): 
         os.mkdir('data/split'+suffix+'_instance0-9')
