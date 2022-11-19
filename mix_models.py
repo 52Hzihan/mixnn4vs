@@ -125,6 +125,48 @@ def cnn_with_feature_2(image_shape, feature_shape, num_classes):
     model = keras.Model(inputs=[image_inputs, feature_inputs], outputs=outputs)
     return model
 
+def cnn_with_feature_3(image_shape, feature_shape, num_classes):
+    
+    image_inputs = keras.Input(shape=image_shape, name='image')
+
+    x2 = layers.Rescaling(scale=1.0 / 255)(image_inputs)
+    x2 = layers.Conv2D(filters=8, kernel_size=(7,7), strides=1, activation="relu", padding='same')(x2)
+    x2 = layers.Conv2D(filters=8, kernel_size=(5,5), strides=1, activation="relu", padding='same')(x2)
+    x2 = layers.BatchNormalization()(x2)
+    x2 = layers.Dropout(0.2)(x2)
+    x2 = layers.MaxPooling2D(pool_size=(3, 3) ,strides=2)(x2)
+    x2 = layers.Conv2D(filters=16, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.Conv2D(filters=16, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.Conv2D(filters=16, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.BatchNormalization()(x2)
+    x2 = layers.Dropout(0.2)(x2)
+    x2 = layers.MaxPooling2D(pool_size=(3, 3), strides=2)(x2)
+    x2 = layers.Conv2D(filters=16, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.Conv2D(filters=16, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.Conv2D(filters=16, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.BatchNormalization()(x2)
+    x2 = layers.Dropout(0.2)(x2)
+    x2 = layers.MaxPooling2D(pool_size=(3, 3), strides=2)(x2)
+    x2 = layers.Conv2D(filters=32, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.Conv2D(filters=32, kernel_size=(3,3), padding='same', activation="relu")(x2)
+    x2 = layers.BatchNormalization()(x2)
+    x2 = layers.Dropout(0.2)(x2)
+    x2 = layers.MaxPooling2D(pool_size=(3, 3), strides=2)(x2)
+    x2 = layers.GlobalAveragePooling2D()(x2)
+    x2 = layers.Dropout(0.2)(x2)
+    x2 = layers.Dense(256, activation="relu", kernel_regularizer='l1')(x2)
+    x2 = layers.Dropout(0.2)(x2)
+    x2 = layers.Dense(32, activation="relu", kernel_regularizer='l1')(x2)
+    
+    feature_inputs = keras.Input(shape=feature_shape, name='feature')
+    x3 = layers.Dense(64, activation="relu", kernel_regularizer='l1')(feature_inputs)
+    x3 = layers.Dense(32, activation="relu", kernel_regularizer='l1')(x3)
+
+    x = layers.concatenate([x2, x3])
+    outputs = layers.Dense(num_classes, activation="softmax", kernel_regularizer='l1')(x)
+    model = keras.Model(inputs=[image_inputs, feature_inputs], outputs=outputs)
+    return model
+
 import keras.backend as K
 
 class SetLearningRate:
