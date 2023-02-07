@@ -433,6 +433,9 @@ def GP_augment_exclude_origin(light_curves, flatten_train_data, size):
     
 def create_dataset_exclude_origin_multi_test(original_dataset, class_size, aug_val=True, 
                     down_sample=False, down_sample_size=None, instance=1, multi_test=5):
+    '''
+    多重测试集被证明结果是一样的
+    '''
     f1 = open(original_dataset, 'rb')
     train_data, val_data, test_data = pickle.load(f1)
     f1.close()

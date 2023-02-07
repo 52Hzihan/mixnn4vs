@@ -57,7 +57,7 @@ class LightCurve():
         index = self.data.index.copy()
         self.data = pd.concat([self.data, pd.Series(column, index=index, name=name)], axis=1)
 
-    def fold(self, period, normalize_phase=False, 
+    def fold(self, period, normalize_phase=False, normalize_section=[-0.5,0.5],
             time='time'):
         '''
         Parameters
@@ -75,8 +75,8 @@ class LightCurve():
         self.period = period
         self.phase_span = period
         if normalize_phase==True:
-            phase = phase / max(phase) -0.5
-            self.phase_span = 1
+            self.phase_span = normalize_section[1] - normalize_section[0]
+            phase = (phase / max(phase)) * self.phase_span + normalize_section[0]
         self.add_column(phase, name='phase')
         self.data = self.data.sort_values(by='phase', ignore_index=True)
         self.folded = True
@@ -111,6 +111,7 @@ class LightCurve():
         original_y = np.array(self.data[self.measurement])
         pred, pred_var = self.GP_model.predict(original_y, x, return_var=True)
         self.add_column(pred, name='smoothed_'+self.measurement)
+
 
     def clean(self):
         if self.folded == False:
@@ -333,8 +334,8 @@ class CRTS_VS_LightCurve(LightCurve):
         self.id = id
         self.time_span = df['mjd'].iloc[-1] - df['mjd'].iloc[0]
 
-    def fold(self, period, normalize_phase=False):
-        return super().fold(period, normalize_phase, 'mjd')
+    def fold(self, period, normalize_phase=False, normalize_section=[-0.5,0.5]):
+        return super().fold(period, normalize_phase, normalize_section, 'mjd')
 
     def supersmoother_fit(self):
         if self.folded==False:
